@@ -78,7 +78,11 @@ func main() {
 		annotate = emotionClient.Annotate
 	}
 	annotatedSynthesizer := func(ctx context.Context, text, voice string, speed int) ([]byte, error) {
-		text = emotion.Fallback(ctx, text, annotate)
+		if annotate != nil {
+			if annotated, err := annotate(ctx, text); err == nil {
+				text = annotated
+			}
+		}
 		return provider.Synthesize(ctx, text, voice, speed)
 	}
 	handler := api.NewHandler(api.Config{
