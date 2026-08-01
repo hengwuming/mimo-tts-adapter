@@ -1,0 +1,5 @@
+
+# Local AI workflow and session artifacts
+.zcode/
+.trellis/tasks/
+.trellis/workspace/
