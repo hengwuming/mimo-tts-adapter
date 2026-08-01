@@ -23,14 +23,25 @@ func TestValidateRequiresEnabledEmotionConfiguration(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsInsecureEmotionEndpoint(t *testing.T) {
+func TestValidateAllowsHTTPEmotionEndpoint(t *testing.T) {
 	cfg := validConfig()
 	cfg.EmotionEnabled = true
-	cfg.EmotionEndpoint = "http://emotion.example.com/v1/chat/completions"
+	cfg.EmotionEndpoint = "http://emotion-service:8000/v1/chat/completions"
+	cfg.EmotionAPIKey = "emotion-key"
+	cfg.EmotionModel = "emotion-model"
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateRejectsInvalidEmotionEndpoint(t *testing.T) {
+	cfg := validConfig()
+	cfg.EmotionEnabled = true
+	cfg.EmotionEndpoint = "emotion-service:8000/v1/chat/completions"
 	cfg.EmotionAPIKey = "emotion-key"
 	cfg.EmotionModel = "emotion-model"
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected insecure emotion endpoint error")
+		t.Fatal("expected invalid emotion endpoint error")
 	}
 }
 

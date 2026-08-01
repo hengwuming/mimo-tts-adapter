@@ -151,8 +151,8 @@ func (c Config) Validate() error {
 		return errors.New("EMOTION_API_KEY and EMOTION_MODEL are required when EMOTION_ENABLED is true")
 	}
 	emotionEndpoint, err := url.Parse(c.EmotionEndpoint)
-	if err != nil || emotionEndpoint.Scheme == "" || emotionEndpoint.Host == "" || emotionEndpoint.Scheme != "https" {
-		return errors.New("EMOTION_ENDPOINT must be an absolute HTTPS URL")
+	if err != nil || emotionEndpoint.Host == "" || (emotionEndpoint.Scheme != "http" && emotionEndpoint.Scheme != "https") {
+		return errors.New("EMOTION_ENDPOINT must be an absolute HTTP or HTTPS URL")
 	}
 	return nil
 }
