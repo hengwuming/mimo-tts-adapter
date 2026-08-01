@@ -13,49 +13,51 @@ import (
 const defaultEndpoint = "https://api.xiaomimimo.com/v1/chat/completions"
 
 type Config struct {
-	ListenAddr               string
-	AdapterAuthToken         string
-	MIMOAPIKey               string
-	MIMOEndpoint             string
-	MIMOModel                string
-	PublicBaseURL            string
-	DefaultVoice             string
-	DefaultSpeed             int
-	MaxRequestBytes          int64
-	MaxTextBytes             int
-	MaxUpstreamBytes         int64
-	MaxAudioBytes            int
-	UpstreamTimeout          time.Duration
-	MaxConcurrency           int
-	RatePerSecond            float64
-	RateBurst                int
-	MaxRetries               int
-	MaxRetryDelay            time.Duration
-	ShutdownTimeout          time.Duration
-	AllowInsecureMIMO        bool
-	EmotionEnabled           bool
-	EmotionEndpoint          string
-	EmotionAPIKey            string
-	EmotionModel             string
-	EmotionTimeout           time.Duration
-	EmotionMaxResponseBytes  int64
-	EmotionMaxRetries        int
-	EmotionResponseFormat    bool
+	ListenAddr              string
+	AdapterAuthToken        string
+	MIMOAPIKey              string
+	MIMOEndpoint            string
+	MIMOModel               string
+	PublicBaseURL           string
+	DefaultVoice            string
+	DefaultSpeed            int
+	MaxRequestBytes         int64
+	MaxTextBytes            int
+	MaxUpstreamBytes        int64
+	MaxAudioBytes           int
+	UpstreamTimeout         time.Duration
+	MaxConcurrency          int
+	RatePerSecond           float64
+	RateBurst               int
+	MaxRetries              int
+	MaxRetryDelay           time.Duration
+	ShutdownTimeout         time.Duration
+	AllowInsecureMIMO       bool
+	EmotionEnabled          bool
+	EmotionEndpoint         string
+	EmotionAPIKey           string
+	EmotionModel            string
+	EmotionTimeout          time.Duration
+	EmotionMaxResponseBytes int64
+	EmotionMaxRetries       int
+	EmotionResponseFormat   bool
+	EmotionResponseLogFile  string
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		ListenAddr:              env("LISTEN_ADDR", ":8080"),
-		AdapterAuthToken:        os.Getenv("ADAPTER_AUTH_TOKEN"),
-		MIMOAPIKey:              os.Getenv("MIMO_API_KEY"),
-		MIMOEndpoint:            env("MIMO_ENDPOINT", defaultEndpoint),
-		MIMOModel:               env("MIMO_MODEL", "mimo-v2.5-tts"),
-		PublicBaseURL:           strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
-		DefaultVoice:            env("DEFAULT_VOICE", "冰糖"),
-		EmotionEndpoint:         os.Getenv("EMOTION_ENDPOINT"),
-		EmotionAPIKey:           os.Getenv("EMOTION_API_KEY"),
-		EmotionModel:            os.Getenv("EMOTION_MODEL"),
-		EmotionResponseFormat:   true,
+		ListenAddr:             env("LISTEN_ADDR", ":8080"),
+		AdapterAuthToken:       os.Getenv("ADAPTER_AUTH_TOKEN"),
+		MIMOAPIKey:             os.Getenv("MIMO_API_KEY"),
+		MIMOEndpoint:           env("MIMO_ENDPOINT", defaultEndpoint),
+		MIMOModel:              env("MIMO_MODEL", "mimo-v2.5-tts"),
+		PublicBaseURL:          strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
+		DefaultVoice:           env("DEFAULT_VOICE", "冰糖"),
+		EmotionEndpoint:        os.Getenv("EMOTION_ENDPOINT"),
+		EmotionAPIKey:          os.Getenv("EMOTION_API_KEY"),
+		EmotionModel:           os.Getenv("EMOTION_MODEL"),
+		EmotionResponseFormat:  true,
+		EmotionResponseLogFile: os.Getenv("EMOTION_RESPONSE_LOG_FILE"),
 	}
 
 	var err error
@@ -107,7 +109,7 @@ func Load() (Config, error) {
 	if cfg.EmotionMaxResponseBytes, err = envInt64("EMOTION_MAX_RESPONSE_BYTES", 8<<10, 1024, 1<<20); err != nil {
 		return Config{}, err
 	}
-	if cfg.EmotionMaxRetries, err = envInt("EMOTION_MAX_RETRIES", 3, 0, 5); err != nil {
+	if cfg.EmotionMaxRetries, err = envInt("EMOTION_MAX_RETRIES", 0, 0, 5); err != nil {
 		return Config{}, err
 	}
 	if cfg.EmotionResponseFormat, err = envBool("EMOTION_RESPONSE_FORMAT", true); err != nil {

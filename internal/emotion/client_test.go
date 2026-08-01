@@ -58,6 +58,52 @@ func TestAnnotateRetriesTransientStatus(t *testing.T) {
 	}
 }
 
+func TestAnnotateLogsSuccessfulContent(t *testing.T) {
+	var entry ResponseLogEntry
+	client := New(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(`{"choices":[{"message":{"content":"{\"segments\":[{\"text\":\"原文\",\"style\":\"轻声\"}]}"}}]}`), nil
+	})}, Config{
+		Endpoint:         "https://emotion.invalid",
+		APIKey:           "key",
+		Model:            "model",
+		MaxResponseBytes: 4096,
+		LogResponse: func(_ context.Context, value ResponseLogEntry) {
+			value.RequestID = "request-1"
+			entry = value
+		},
+	})
+	if _, err := client.Annotate(context.Background(), "原文"); err != nil {
+		t.Fatal(err)
+	}
+	if entry.Status != "success" || entry.Attempts != 1 || entry.RequestID != "request-1" {
+		t.Fatalf("entry = %#v", entry)
+	}
+	if !strings.Contains(entry.Content, `"style":"轻声"`) || entry.AnnotatedText != "(轻声)原文" {
+		t.Fatalf("entry = %#v", entry)
+	}
+}
+
+func TestAnnotateLogsInvalidContent(t *testing.T) {
+	var entry ResponseLogEntry
+	client := New(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(`{"choices":[{"message":{"content":"not-json-private-text"}}]}`), nil
+	})}, Config{
+		Endpoint:         "https://emotion.invalid",
+		APIKey:           "key",
+		Model:            "model",
+		MaxResponseBytes: 4096,
+		LogResponse: func(_ context.Context, value ResponseLogEntry) {
+			entry = value
+		},
+	})
+	if _, err := client.Annotate(context.Background(), "原文"); err == nil {
+		t.Fatal("expected invalid response error")
+	}
+	if entry.Status != "error" || entry.Attempts != 1 || entry.Content != "not-json-private-text" || entry.AnnotatedText != "" {
+		t.Fatalf("entry = %#v", entry)
+	}
+}
+
 func TestAnnotateRejectsUnsafeStyle(t *testing.T) {
 	client := New(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return jsonResponse(`{"choices":[{"message":{"content":"{\"segments\":[{\"text\":\"原文\",\"style\":\"坏\n标签\"}]}"}}]}`), nil

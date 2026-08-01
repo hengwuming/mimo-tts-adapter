@@ -19,6 +19,51 @@ import (
 	"mimo-tts-adapter/internal/upstream"
 )
 
+func errorCategory(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.Canceled) {
+		return "cancelled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	var providerErr *upstream.Error
+	if errors.As(err, &providerErr) {
+		return providerErr.Category
+	}
+	return "unavailable"
+}
+
+func newSynthesizer(
+	provider func(context.Context, string, string, int) ([]byte, error),
+	annotate func(context.Context, string) (string, error),
+	logger *slog.Logger,
+) func(context.Context, string, string, int) ([]byte, error) {
+	return func(ctx context.Context, text, voice string, speed int) ([]byte, error) {
+		requestID := api.RequestID(ctx)
+		if annotate != nil {
+			started := time.Now()
+			annotated, err := annotate(ctx, text)
+			if err == nil {
+				text = annotated
+				logger.Info("emotion_completed", "request_id", requestID, "status", "success", "duration_ms", time.Since(started).Milliseconds())
+			} else {
+				logger.Warn("emotion_completed", "request_id", requestID, "status", "fallback", "duration_ms", time.Since(started).Milliseconds(), "error_category", errorCategory(err))
+			}
+		}
+		started := time.Now()
+		audio, err := provider(ctx, text, voice, speed)
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		logger.Info("mimo_completed", "request_id", requestID, "status", status, "duration_ms", time.Since(started).Milliseconds(), "error_category", errorCategory(err))
+		return audio, err
+	}
+}
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	cfg, err := config.Load()
@@ -60,12 +105,30 @@ func main() {
 	}, gate.WaitRate)
 	var annotate func(context.Context, string) (string, error)
 	if cfg.EmotionEnabled {
+		var responseLogger *emotion.ResponseLogger
+		if cfg.EmotionResponseLogFile != "" {
+			responseLogger, err = emotion.OpenResponseLogger(cfg.EmotionResponseLogFile)
+			if err != nil {
+				logger.Error("emotion_response_log_failed", "error", err.Error())
+				os.Exit(1)
+			}
+			defer responseLogger.Close()
+		}
 		emotionHTTPClient := &http.Client{
 			Transport: transport,
 			Timeout:   cfg.EmotionTimeout,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
+		}
+		var logResponse emotion.ResponseLogFunc
+		if responseLogger != nil {
+			logResponse = func(ctx context.Context, entry emotion.ResponseLogEntry) {
+				entry.RequestID = api.RequestID(ctx)
+				if err := responseLogger.Write(entry); err != nil {
+					logger.Error("emotion_response_log_failed", "request_id", entry.RequestID, "error", err.Error())
+				}
+			}
 		}
 		emotionClient := emotion.New(emotionHTTPClient, emotion.Config{
 			Endpoint:         cfg.EmotionEndpoint,
@@ -74,17 +137,11 @@ func main() {
 			MaxResponseBytes: cfg.EmotionMaxResponseBytes,
 			MaxRetries:       cfg.EmotionMaxRetries,
 			ResponseFormat:   cfg.EmotionResponseFormat,
+			LogResponse:      logResponse,
 		})
 		annotate = emotionClient.Annotate
 	}
-	annotatedSynthesizer := func(ctx context.Context, text, voice string, speed int) ([]byte, error) {
-		if annotate != nil {
-			if annotated, err := annotate(ctx, text); err == nil {
-				text = annotated
-			}
-		}
-		return provider.Synthesize(ctx, text, voice, speed)
-	}
+	annotatedSynthesizer := newSynthesizer(provider.Synthesize, annotate, logger)
 	handler := api.NewHandler(api.Config{
 		PublicBaseURL:   cfg.PublicBaseURL,
 		DefaultVoice:    cfg.DefaultVoice,
