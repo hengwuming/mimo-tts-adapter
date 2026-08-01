@@ -33,3 +33,23 @@ docker run -d --name mimo-tts-adapter --restart unless-stopped \
 ```bash
 curl http://localhost:8080/healthz
 ```
+
+## 可选：自动情感标注
+
+MiMo V2.5 TTS 支持 `(自然语言表现描述)正文` 形式的行内音频标签。服务可以先调用 OpenAI 兼容的文字模型分析每个段落，再把经过校验的标签文本发送给 MiMo：
+
+```dotenv
+EMOTION_ENABLED=true
+EMOTION_ENDPOINT=https://你的模型服务/v1/chat/completions
+EMOTION_API_KEY=文字模型API Key
+EMOTION_MODEL=模型名称
+```
+
+文字模型必须返回结构化 JSON 片段；服务会确认所有片段拼接后与原文逐字一致，再生成标签。例如：
+
+```text
+(低声、压抑)夜深了，他一个人站在窗前。
+(突然提高音量，愤怒地喊)你为什么要骗我！
+```
+
+默认最多重试 3 次。文字模型超时、不可用、返回非法 JSON 或改写原文时，服务会使用原文继续调用 MiMo，不会中断朗读。开启后，每个段落会增加一次文字模型请求，因此会增加延迟和费用；原始小说段落也会发送给你配置的文字模型服务。正文、标签和 API Key 均不会写入日志。

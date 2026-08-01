@@ -14,6 +14,7 @@ import (
 	"mimo-tts-adapter/internal/api"
 	"mimo-tts-adapter/internal/auth"
 	"mimo-tts-adapter/internal/config"
+	"mimo-tts-adapter/internal/emotion"
 	"mimo-tts-adapter/internal/limits"
 	"mimo-tts-adapter/internal/upstream"
 )
@@ -57,13 +58,36 @@ func main() {
 		MaxRetries:       cfg.MaxRetries,
 		MaxRetryDelay:    cfg.MaxRetryDelay,
 	}, gate.WaitRate)
+	var annotate func(context.Context, string) (string, error)
+	if cfg.EmotionEnabled {
+		emotionHTTPClient := &http.Client{
+			Transport: transport,
+			Timeout:   cfg.EmotionTimeout,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+		emotionClient := emotion.New(emotionHTTPClient, emotion.Config{
+			Endpoint:         cfg.EmotionEndpoint,
+			APIKey:           cfg.EmotionAPIKey,
+			Model:            cfg.EmotionModel,
+			MaxResponseBytes: cfg.EmotionMaxResponseBytes,
+			MaxRetries:       cfg.EmotionMaxRetries,
+			ResponseFormat:   cfg.EmotionResponseFormat,
+		})
+		annotate = emotionClient.Annotate
+	}
+	annotatedSynthesizer := func(ctx context.Context, text, voice string, speed int) ([]byte, error) {
+		text = emotion.Fallback(ctx, text, annotate)
+		return provider.Synthesize(ctx, text, voice, speed)
+	}
 	handler := api.NewHandler(api.Config{
 		PublicBaseURL:   cfg.PublicBaseURL,
 		DefaultVoice:    cfg.DefaultVoice,
 		DefaultSpeed:    cfg.DefaultSpeed,
 		MaxRequestBytes: cfg.MaxRequestBytes,
 		MaxTextBytes:    cfg.MaxTextBytes,
-	}, auth.New(cfg.AdapterAuthToken), gate, provider.Synthesize, logger)
+	}, auth.New(cfg.AdapterAuthToken), gate, annotatedSynthesizer, logger)
 
 	appCtx, cancelApp := context.WithCancel(context.Background())
 	defer cancelApp()
