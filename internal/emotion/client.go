@@ -19,6 +19,18 @@ const systemPrompt = `你是中文有声书朗读标注器。请把输入原文�
 
 var errInvalidResponse = errors.New("invalid emotion response")
 
+type ResponseLogEntry struct {
+	Time          time.Time `json:"time"`
+	RequestID     string    `json:"request_id,omitempty"`
+	Status        string    `json:"status"`
+	Attempts      int       `json:"attempts"`
+	DurationMS    int64     `json:"duration_ms"`
+	Content       string    `json:"content,omitempty"`
+	AnnotatedText string    `json:"annotated_text,omitempty"`
+}
+
+type ResponseLogFunc func(context.Context, ResponseLogEntry)
+
 type Config struct {
 	Endpoint         string
 	APIKey           string
@@ -26,6 +38,7 @@ type Config struct {
 	MaxResponseBytes int64
 	MaxRetries       int
 	ResponseFormat   bool
+	LogResponse      ResponseLogFunc
 }
 
 type Client struct {
@@ -66,11 +79,39 @@ type segment struct {
 	Style string `json:"style,omitempty"`
 }
 
+type attemptResult struct {
+	annotated string
+	content   string
+}
+
 func New(httpClient *http.Client, config Config) *Client {
 	return &Client{httpClient: httpClient, config: config, sleep: sleepContext}
 }
 
-func (c *Client) Annotate(ctx context.Context, text string) (string, error) {
+func (c *Client) Annotate(ctx context.Context, text string) (annotated string, err error) {
+	started := time.Now()
+	attempts := 0
+	var content string
+	defer func() {
+		if c.config.LogResponse == nil {
+			return
+		}
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		entry := ResponseLogEntry{
+			Time:       time.Now().UTC(),
+			Status:     status,
+			Attempts:   attempts,
+			DurationMS: time.Since(started).Milliseconds(),
+			Content:    content,
+		}
+		if err == nil {
+			entry.AnnotatedText = annotated
+		}
+		c.config.LogResponse(ctx, entry)
+	}()
 	payload := request{
 		Model: c.config.Model,
 		Messages: []message{
@@ -95,22 +136,26 @@ func (c *Client) Annotate(ctx context.Context, text string) (string, error) {
 				return "", err
 			}
 		}
-		annotated, retry, err := c.attempt(ctx, body, text)
-		if err == nil {
-			return annotated, nil
+		attempts++
+		result, retry, attemptErr := c.attempt(ctx, body, text)
+		if result.content != "" {
+			content = result.content
 		}
-		lastErr = err
+		if attemptErr == nil {
+			return result.annotated, nil
+		}
+		lastErr = attemptErr
 		if !retry {
-			return "", err
+			return "", attemptErr
 		}
 	}
 	return "", lastErr
 }
 
-func (c *Client) attempt(ctx context.Context, payload []byte, original string) (string, bool, error) {
+func (c *Client) attempt(ctx context.Context, payload []byte, original string) (attemptResult, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.Endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return "", false, err
+		return attemptResult{}, false, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -119,38 +164,40 @@ func (c *Client) attempt(ctx context.Context, payload []byte, original string) (
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", false, ctx.Err()
+			return attemptResult{}, false, ctx.Err()
 		}
 		var networkErr net.Error
 		retry := errors.As(err, &networkErr) && (networkErr.Timeout() || networkErr.Temporary())
-		return "", retry, err
+		return attemptResult{}, retry, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, c.config.MaxResponseBytes+1))
 	if err != nil {
-		return "", true, err
+		return attemptResult{}, true, err
 	}
 	if int64(len(body)) > c.config.MaxResponseBytes {
-		return "", false, errInvalidResponse
+		return attemptResult{}, false, errInvalidResponse
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", retryableStatus(resp.StatusCode), fmt.Errorf("emotion provider status %d", resp.StatusCode)
+		return attemptResult{}, retryableStatus(resp.StatusCode), fmt.Errorf("emotion provider status %d", resp.StatusCode)
 	}
 
 	var decoded response
 	if err := json.Unmarshal(body, &decoded); err != nil || len(decoded.Choices) == 0 {
-		return "", false, errInvalidResponse
+		return attemptResult{}, false, errInvalidResponse
 	}
-	var result annotation
-	if err := decodeStrict([]byte(decoded.Choices[0].Message.Content), &result); err != nil {
-		return "", false, errInvalidResponse
+	content := decoded.Choices[0].Message.Content
+	result := attemptResult{content: content}
+	var annotation annotation
+	if err := decodeStrict([]byte(content), &annotation); err != nil {
+		return result, false, errInvalidResponse
 	}
-	annotated, err := render(original, result.Segments)
+	result.annotated, err = render(original, annotation.Segments)
 	if err != nil {
-		return "", false, err
+		return result, false, err
 	}
-	return annotated, false, nil
+	return result, false, nil
 }
 
 func render(original string, segments []segment) (string, error) {

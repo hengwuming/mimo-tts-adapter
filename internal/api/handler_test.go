@@ -99,6 +99,9 @@ func TestRuleDoesNotLeakSecrets(t *testing.T) {
 	if recorder.Code != http.StatusOK || strings.Contains(body, "adapter-secret") || !strings.Contains(body, "REPLACE_WITH_ADAPTER_TOKEN") {
 		t.Fatalf("unsafe rule: %s", body)
 	}
+	if !strings.Contains(body, `"concurrentRate":"0"`) {
+		t.Fatalf("rule still throttles preloading: %s", body)
+	}
 }
 
 func TestLogsDoNotContainTextOrAuthorization(t *testing.T) {

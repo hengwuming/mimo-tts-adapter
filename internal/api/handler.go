@@ -73,7 +73,7 @@ func (h *Handler) rule(w http.ResponseWriter, _ *http.Request) {
 		"name":           "MiMo V2.5 TTS - " + h.config.DefaultVoice,
 		"url":            h.config.PublicBaseURL + `/tts,{"method":"POST","headers":{"Authorization":"Bearer REPLACE_WITH_ADAPTER_TOKEN","Content-Type":"application/json"},"body":{"text":"{{speakText}}","voice":"` + h.config.DefaultVoice + `","speed":{{speakSpeed}}}}`,
 		"contentType":    "audio/mpeg",
-		"concurrentRate": "1000",
+		"concurrentRate": "0",
 		"pauseDuration":  0,
 	}
 	writeJSONStatus(w, http.StatusOK, body)
@@ -218,7 +218,7 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, status int,
 	var envelope errorEnvelope
 	envelope.Error.Code = code
 	envelope.Error.Message = message
-	envelope.Error.RequestID = requestID(r.Context())
+	envelope.Error.RequestID = RequestID(r.Context())
 	writeJSONStatus(w, status, envelope)
 }
 
@@ -232,6 +232,11 @@ func writeJSONStatus(w http.ResponseWriter, status int, value any) {
 type contextKey string
 
 const requestIDKey contextKey = "request-id"
+
+func RequestID(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDKey).(string)
+	return id
+}
 
 func (h *Handler) accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -252,11 +257,6 @@ func (h *Handler) accessLog(next http.Handler) http.Handler {
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
 	})
-}
-
-func requestID(ctx context.Context) string {
-	id, _ := ctx.Value(requestIDKey).(string)
-	return id
 }
 
 type responseRecorder struct {
