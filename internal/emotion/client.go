@@ -70,17 +70,6 @@ func New(httpClient *http.Client, config Config) *Client {
 	return &Client{httpClient: httpClient, config: config, sleep: sleepContext}
 }
 
-func Fallback(ctx context.Context, text string, annotate func(context.Context, string) (string, error)) string {
-	if annotate == nil {
-		return text
-	}
-	annotated, err := annotate(ctx, text)
-	if err != nil {
-		return text
-	}
-	return annotated
-}
-
 func (c *Client) Annotate(ctx context.Context, text string) (string, error) {
 	payload := request{
 		Model: c.config.Model,
