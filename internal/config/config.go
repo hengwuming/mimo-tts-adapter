@@ -103,7 +103,7 @@ func Load() (Config, error) {
 	if cfg.EmotionEnabled, err = envBool("EMOTION_ENABLED", false); err != nil {
 		return Config{}, err
 	}
-	if cfg.EmotionTimeout, err = envDuration("EMOTION_TIMEOUT", 5*time.Second, time.Second, time.Minute); err != nil {
+	if cfg.EmotionTimeout, err = envDuration("EMOTION_TIMEOUT", 7*time.Second, time.Second, time.Minute); err != nil {
 		return Config{}, err
 	}
 	if cfg.EmotionMaxResponseBytes, err = envInt64("EMOTION_MAX_RESPONSE_BYTES", 8<<10, 1024, 1<<20); err != nil {

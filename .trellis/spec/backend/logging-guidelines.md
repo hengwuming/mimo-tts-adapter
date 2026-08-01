@@ -30,12 +30,17 @@ Text-model response logging is a deliberate, default-off exception. When
 - open the file at startup in append mode with `0600`, failing startup if it
   cannot be opened;
 - write one JSON object per line with timestamp, optional request ID, status,
-  attempts, duration, extracted model content, and verified annotated text only
-  on success;
+  stable `error_category` on failure, attempts, duration, extracted model content,
+  and verified `style_instruction` only on success;
 - keep annotation and TTS running if a later write fails, and never copy the
   sensitive entry to stdout;
 - never record credentials, complete provider envelopes, MiMo payloads, Base64,
   or audio bytes.
+
+When emotion annotation fails, use one of the stable categories `timeout`,
+`cancelled`, `provider_status`, `response_too_large`, `provider_json`,
+`content_json`, `invalid_range`, or `invalid_style` when applicable. Categories
+come from typed/sentinel errors; never classify by parsing error text.
 
 When the path is empty, no full-text log is created. The operator owns directory
 permissions, mounting, rotation, retention, and access.

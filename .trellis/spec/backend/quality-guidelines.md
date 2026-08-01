@@ -24,12 +24,25 @@ explicit contracts over frameworks or speculative abstractions.
 - Close provider response bodies and detect limit overflow using `limit+1`.
 - Use strict Bearer parsing and `crypto/subtle` comparison.
 - Keep MiMo schemas isolated in `internal/upstream`.
-
+- For MiMo TTS, keep the exact speakable text in the `assistant` message. Put
+  speed, emotion, and delivery instructions only in the `user` message so
+  control text cannot become spoken content.
+- Emotion output uses ordered, non-overlapping Unicode rune `[start,end)` ranges
+  bounded by the original paragraph. Validate range, style, count, and total
+  instruction limits locally.
+- Keep emotion calls single-flight. Queue waits use the request context and count
+  toward the emotion timeout, independently of MiMo synthesis concurrency.
+- Only unwrap a single `json` or unlabelled fence that encloses the entire trimmed
+  emotion response; reject surrounding prose or nested fences.
 ## Testing Requirements
 
 - Unit tests use `testing`, `httptest`, and fake `RoundTripper` implementations.
 - Test auth, strict JSON, bounds, normalization, provider payloads, Base64,
   retry matrices, cancellation, response MIME, rule redaction, and log privacy.
+- Emotion regressions must assert `assistant.content` equals the original text
+  byte-for-byte and every generated style instruction appears only in
+  `user.content`. Fenced JSON may be unwrapped only when the fence is the entire
+  model content; surrounding prose remains invalid.
 - Normal tests must not call the real MiMo API.
 
 Required checks:

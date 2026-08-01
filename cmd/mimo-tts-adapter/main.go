@@ -29,6 +29,10 @@ func errorCategory(err error) string {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "timeout"
 	}
+	var emotionErr *emotion.Error
+	if errors.As(err, &emotionErr) {
+		return emotionErr.Category
+	}
 	var providerErr *upstream.Error
 	if errors.As(err, &providerErr) {
 		return providerErr.Category
@@ -37,24 +41,25 @@ func errorCategory(err error) string {
 }
 
 func newSynthesizer(
-	provider func(context.Context, string, string, int) ([]byte, error),
+	provider func(context.Context, string, string, int, string) ([]byte, error),
 	annotate func(context.Context, string) (string, error),
 	logger *slog.Logger,
 ) func(context.Context, string, string, int) ([]byte, error) {
 	return func(ctx context.Context, text, voice string, speed int) ([]byte, error) {
 		requestID := api.RequestID(ctx)
+		var styleInstruction string
 		if annotate != nil {
 			started := time.Now()
-			annotated, err := annotate(ctx, text)
+			instruction, err := annotate(ctx, text)
 			if err == nil {
-				text = annotated
+				styleInstruction = instruction
 				logger.Info("emotion_completed", "request_id", requestID, "status", "success", "duration_ms", time.Since(started).Milliseconds())
 			} else {
 				logger.Warn("emotion_completed", "request_id", requestID, "status", "fallback", "duration_ms", time.Since(started).Milliseconds(), "error_category", errorCategory(err))
 			}
 		}
 		started := time.Now()
-		audio, err := provider(ctx, text, voice, speed)
+		audio, err := provider(ctx, text, voice, speed, styleInstruction)
 		status := "success"
 		if err != nil {
 			status = "error"
