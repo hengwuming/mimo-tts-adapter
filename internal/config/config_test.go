@@ -70,11 +70,14 @@ func setRequiredEnv(t *testing.T) {
 	}
 }
 
-func TestLoadDefaultsEmotionRetriesToZero(t *testing.T) {
+func TestLoadDefaultsEmotionSettings(t *testing.T) {
 	setRequiredEnv(t)
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cfg.EmotionTimeout.String() != "7s" {
+		t.Fatalf("EmotionTimeout = %s", cfg.EmotionTimeout)
 	}
 	if cfg.EmotionMaxRetries != 0 {
 		t.Fatalf("EmotionMaxRetries = %d", cfg.EmotionMaxRetries)

@@ -36,7 +36,7 @@ curl http://localhost:8080/healthz
 
 ## 可选：自动情感标注
 
-MiMo V2.5 TTS 支持 `(自然语言表现描述)正文` 形式的行内音频标签。服务可以先调用 OpenAI 兼容的文字模型分析每个段落，再把经过校验的标签文本发送给 MiMo：
+服务可以先调用 OpenAI 兼容的文字模型分析每个段落，再把经过校验的情绪与语气指导发送给 MiMo：
 
 ```dotenv
 EMOTION_ENABLED=true
@@ -45,14 +45,27 @@ EMOTION_API_KEY=文字模型API Key
 EMOTION_MODEL=模型名称
 ```
 
-文字模型地址支持绝对的 HTTP 或 HTTPS URL；可信内网服务可直接使用 HTTP。文字模型必须返回结构化 JSON 片段；服务会确认所有片段拼接后与原文逐字一致，再生成标签。例如：
+文字模型地址支持绝对的 HTTP 或 HTTPS URL。文字模型只需返回需要控制的原文 Unicode rune 索引区间，不再复制小说正文，例如：
 
-```text
-(低声、压抑)夜深了，他一个人站在窗前。
-(突然提高音量，愤怒地喊)你为什么要骗我！
+```json
+{"styles":[{"start":2,"end":16,"style":"语气惊讶且兴奋"}]}
 ```
 
-默认不重试文字模型。文字模型超时、不可用、返回非法 JSON 或改写原文时，服务会立即使用原文继续调用 MiMo，不会中断朗读。可通过 `EMOTION_MAX_RETRIES` 配置 0-5 次重试，但每次重试都会增加故障时的首段等待时间。
+`start`/`end` 是从 0 开始的 Unicode rune 半开区间 `[start,end)`，汉字、中文标点和全角空格通常各计一个 rune。服务会严格校验区间非空、升序、互不重叠且不越界，并直接从原文生成朗读锚点。无需额外控制时返回 `{"styles":[]}`。这种协议不会让模型复写含引号的正文，因此响应更短，也避免正文引号破坏 JSON。
+
+默认 `EMOTION_RESPONSE_FORMAT=true`，服务会向支持该能力的 OpenAI 兼容接口发送严格 `json_schema`。如果你的兼容服务不支持 `json_schema`，可设为 `false`；提示词和本地严格校验仍要求上述索引格式。
+
+按照 MiMo V2.5 TTS 的官方消息协议，语速和情绪指导只放在不会被合成为语音的 `user` 消息，`assistant` 消息始终只包含原始小说正文。服务不会再将 `(情绪标签)` 插入正文，从而避免模型偶尔把标签内容直接读出来。文字模型返回单层 ` ```json ... ``` ` 代码围栏时可以兼容，围栏外存在其他文字时仍会回退原文。
+
+推荐配置如下：
+
+```dotenv
+EMOTION_TIMEOUT=7s
+EMOTION_MAX_RETRIES=0
+EMOTION_RESPONSE_FORMAT=true
+```
+
+情绪模型调用固定为单路执行，避免 Legado 预加载同时压入多个请求、让单 worker 模型相互争抢。等待槽位也计入 7 秒总超时，并会响应客户端取消；它与 MiMo 的 `MAX_CONCURRENCY` 独立，不会降低 MiMo 合成并发。文字模型超时、不可用或响应校验失败时，服务会使用原文继续调用 MiMo，不会中断朗读。虽然可将 `EMOTION_MAX_RETRIES` 配为 0-5，但重试会成倍增加故障时的首段等待，通常应保持为 0。
 
 开启后，每个段落会增加一次文字模型请求，因此会增加延迟和费用；原始小说段落也会发送给你配置的文字模型服务。容器标准输出只记录请求 ID、阶段状态和耗时等脱敏元数据，不记录正文、标签或 API Key。日志中的 `emotion_completed`、`mimo_completed` 和 `http_request` 可分别用于判断文字模型、MiMo 合成和端到端耗时。
 
@@ -77,7 +90,9 @@ docker run -d --name mimo-tts-adapter --restart unless-stopped \
 
 示例让容器以宿主机当前的非 root UID/GID 运行，使它能够写入权限为 `0700` 的挂载目录。若保持镜像默认用户运行，则需要改为向 UID/GID `65532:65532` 授予该目录的写权限。
 
-该文件以追加方式写入，每行包含时间、请求 ID、成功/失败状态、尝试次数、耗时以及文字模型的最终 `content`；校验成功时还包含最终 `annotated_text`。新文件权限设为 `0600`，路径不可写时服务拒绝启动。
+该文件以追加方式写入，每行包含时间、请求 ID、成功/失败状态、稳定的 `error_category`、尝试次数、耗时以及文字模型的最终 `content`；校验成功时还包含生成的 `style_instruction`。新文件权限设为 `0600`，路径不可写时服务拒绝启动。
+
+常见失败分类包括 `timeout`、`cancelled`、`provider_status`、`response_too_large`、`provider_json`、`content_json`、`invalid_range` 和 `invalid_style`。如果主要是 `timeout`，依据实测 P95 小幅提高 `EMOTION_TIMEOUT`；如果主要是 `content_json`，检查兼容服务是否支持 `json_schema`，不支持时设 `EMOTION_RESPONSE_FORMAT=false`；`invalid_range` 或 `invalid_style` 表示模型输出已收到但没有通过本地安全校验。
 
 这个文件会包含小说正文和情感标签，属于敏感数据，而且服务不会自动轮转或删除它。请只挂载到可信目录，并在宿主机配置日志轮转和保留期限。未配置 `EMOTION_RESPONSE_LOG_FILE` 时不会创建全文日志。
 

@@ -86,16 +86,20 @@ func New(httpClient *http.Client, config Config, waitRate func(context.Context) 
 	return &Client{httpClient: httpClient, config: config, waitRate: waitRate, sleep: sleepContext}
 }
 
-func (c *Client) Synthesize(ctx context.Context, text, voice string, speed int) ([]byte, error) {
+func (c *Client) Synthesize(ctx context.Context, text, voice string, speed int, styleInstruction string) ([]byte, error) {
 	if c.httpClient.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.httpClient.Timeout)
 		defer cancel()
 	}
+	instruction := SpeedInstruction(speed)
+	if styleInstruction != "" {
+		instruction += "\n" + styleInstruction
+	}
 	payload, err := json.Marshal(synthesisRequest{
 		Model: c.config.Model,
 		Messages: []message{
-			{Role: "user", Content: SpeedInstruction(speed)},
+			{Role: "user", Content: instruction},
 			{Role: "assistant", Content: text},
 		},
 		Audio:  audio{Format: "mp3", Voice: voice},
