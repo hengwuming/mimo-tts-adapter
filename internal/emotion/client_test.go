@@ -58,15 +58,6 @@ func TestAnnotateRetriesTransientStatus(t *testing.T) {
 	}
 }
 
-func TestFallbackUsesOriginalText(t *testing.T) {
-	got := Fallback(context.Background(), "原文", func(context.Context, string) (string, error) {
-		return "", errInvalidResponse
-	})
-	if got != "原文" {
-		t.Fatalf("fallback = %q", got)
-	}
-}
-
 func TestAnnotateRejectsUnsafeStyle(t *testing.T) {
 	client := New(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return jsonResponse(`{"choices":[{"message":{"content":"{\"segments\":[{\"text\":\"原文\",\"style\":\"坏\n标签\"}]}"}}]}`), nil

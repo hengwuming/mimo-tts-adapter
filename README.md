@@ -40,12 +40,12 @@ MiMo V2.5 TTS 支持 `(自然语言表现描述)正文` 形式的行内音频标
 
 ```dotenv
 EMOTION_ENABLED=true
-EMOTION_ENDPOINT=https://你的模型服务/v1/chat/completions
+EMOTION_ENDPOINT=http://内网模型服务:8000/v1/chat/completions
 EMOTION_API_KEY=文字模型API Key
 EMOTION_MODEL=模型名称
 ```
 
-文字模型必须返回结构化 JSON 片段；服务会确认所有片段拼接后与原文逐字一致，再生成标签。例如：
+文字模型地址支持绝对的 HTTP 或 HTTPS URL；可信内网服务可直接使用 HTTP。文字模型必须返回结构化 JSON 片段；服务会确认所有片段拼接后与原文逐字一致，再生成标签。例如：
 
 ```text
 (低声、压抑)夜深了，他一个人站在窗前。
