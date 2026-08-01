@@ -13,37 +13,49 @@ import (
 const defaultEndpoint = "https://api.xiaomimimo.com/v1/chat/completions"
 
 type Config struct {
-	ListenAddr        string
-	AdapterAuthToken  string
-	MIMOAPIKey        string
-	MIMOEndpoint      string
-	MIMOModel         string
-	PublicBaseURL     string
-	DefaultVoice      string
-	DefaultSpeed      int
-	MaxRequestBytes   int64
-	MaxTextBytes      int
-	MaxUpstreamBytes  int64
-	MaxAudioBytes     int
-	UpstreamTimeout   time.Duration
-	MaxConcurrency    int
-	RatePerSecond     float64
-	RateBurst         int
-	MaxRetries        int
-	MaxRetryDelay     time.Duration
-	ShutdownTimeout   time.Duration
-	AllowInsecureMIMO bool
+	ListenAddr               string
+	AdapterAuthToken         string
+	MIMOAPIKey               string
+	MIMOEndpoint             string
+	MIMOModel                string
+	PublicBaseURL            string
+	DefaultVoice             string
+	DefaultSpeed             int
+	MaxRequestBytes          int64
+	MaxTextBytes             int
+	MaxUpstreamBytes         int64
+	MaxAudioBytes            int
+	UpstreamTimeout          time.Duration
+	MaxConcurrency           int
+	RatePerSecond            float64
+	RateBurst                int
+	MaxRetries               int
+	MaxRetryDelay            time.Duration
+	ShutdownTimeout          time.Duration
+	AllowInsecureMIMO        bool
+	EmotionEnabled           bool
+	EmotionEndpoint          string
+	EmotionAPIKey            string
+	EmotionModel             string
+	EmotionTimeout           time.Duration
+	EmotionMaxResponseBytes  int64
+	EmotionMaxRetries        int
+	EmotionResponseFormat    bool
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		ListenAddr:       env("LISTEN_ADDR", ":8080"),
-		AdapterAuthToken: os.Getenv("ADAPTER_AUTH_TOKEN"),
-		MIMOAPIKey:       os.Getenv("MIMO_API_KEY"),
-		MIMOEndpoint:     env("MIMO_ENDPOINT", defaultEndpoint),
-		MIMOModel:        env("MIMO_MODEL", "mimo-v2.5-tts"),
-		PublicBaseURL:    strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
-		DefaultVoice:     env("DEFAULT_VOICE", "冰糖"),
+		ListenAddr:              env("LISTEN_ADDR", ":8080"),
+		AdapterAuthToken:        os.Getenv("ADAPTER_AUTH_TOKEN"),
+		MIMOAPIKey:              os.Getenv("MIMO_API_KEY"),
+		MIMOEndpoint:            env("MIMO_ENDPOINT", defaultEndpoint),
+		MIMOModel:               env("MIMO_MODEL", "mimo-v2.5-tts"),
+		PublicBaseURL:           strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
+		DefaultVoice:            env("DEFAULT_VOICE", "冰糖"),
+		EmotionEndpoint:         os.Getenv("EMOTION_ENDPOINT"),
+		EmotionAPIKey:           os.Getenv("EMOTION_API_KEY"),
+		EmotionModel:            os.Getenv("EMOTION_MODEL"),
+		EmotionResponseFormat:   true,
 	}
 
 	var err error
@@ -86,6 +98,21 @@ func Load() (Config, error) {
 	if cfg.AllowInsecureMIMO, err = envBool("MIMO_ALLOW_HTTP", false); err != nil {
 		return Config{}, err
 	}
+	if cfg.EmotionEnabled, err = envBool("EMOTION_ENABLED", false); err != nil {
+		return Config{}, err
+	}
+	if cfg.EmotionTimeout, err = envDuration("EMOTION_TIMEOUT", 5*time.Second, time.Second, time.Minute); err != nil {
+		return Config{}, err
+	}
+	if cfg.EmotionMaxResponseBytes, err = envInt64("EMOTION_MAX_RESPONSE_BYTES", 8<<10, 1024, 1<<20); err != nil {
+		return Config{}, err
+	}
+	if cfg.EmotionMaxRetries, err = envInt("EMOTION_MAX_RETRIES", 3, 0, 5); err != nil {
+		return Config{}, err
+	}
+	if cfg.EmotionResponseFormat, err = envBool("EMOTION_RESPONSE_FORMAT", true); err != nil {
+		return Config{}, err
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -116,6 +143,16 @@ func (c Config) Validate() error {
 	}
 	if c.MIMOModel != "mimo-v2.5-tts" {
 		return errors.New("MIMO_MODEL must be mimo-v2.5-tts")
+	}
+	if !c.EmotionEnabled {
+		return nil
+	}
+	if c.EmotionAPIKey == "" || c.EmotionModel == "" {
+		return errors.New("EMOTION_API_KEY and EMOTION_MODEL are required when EMOTION_ENABLED is true")
+	}
+	emotionEndpoint, err := url.Parse(c.EmotionEndpoint)
+	if err != nil || emotionEndpoint.Scheme == "" || emotionEndpoint.Host == "" || emotionEndpoint.Scheme != "https" {
+		return errors.New("EMOTION_ENDPOINT must be an absolute HTTPS URL")
 	}
 	return nil
 }
