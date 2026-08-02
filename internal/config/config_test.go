@@ -82,6 +82,9 @@ func TestLoadDefaultsEmotionSettings(t *testing.T) {
 	if cfg.EmotionMaxRetries != 0 {
 		t.Fatalf("EmotionMaxRetries = %d", cfg.EmotionMaxRetries)
 	}
+	if cfg.EmotionResponseFormat {
+		t.Fatal("EmotionResponseFormat = true, want false")
+	}
 	if cfg.EmotionResponseLogFile != "" {
 		t.Fatalf("EmotionResponseLogFile = %q", cfg.EmotionResponseLogFile)
 	}

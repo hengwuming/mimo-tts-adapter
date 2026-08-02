@@ -31,7 +31,9 @@ Text-model response logging is a deliberate, default-off exception. When
   cannot be opened;
 - write one JSON object per line with timestamp, optional request ID, status,
   stable `error_category` on failure, attempts, duration, extracted model content,
-  and verified `style_instruction` only on success;
+  and verified `style_instruction` only on success; for non-2xx provider replies,
+  it may also contain the numeric provider status and a bounded standard
+  `error.message`, but never an unstructured raw error page;
 - keep annotation and TTS running if a later write fails, and never copy the
   sensitive entry to stdout;
 - never record credentials, complete provider envelopes, MiMo payloads, Base64,
