@@ -122,6 +122,95 @@ func TestAnnotateLogsSuccessfulContent(t *testing.T) {
 	}
 }
 
+func TestAnnotateLogsProviderStatusDetails(t *testing.T) {
+	const providerMessage = "response_format type json_schema is not supported"
+	var entry ResponseLogEntry
+	client := New(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		body, _ := json.Marshal(map[string]any{
+			"error": map[string]string{"message": providerMessage},
+		})
+		return statusResponse(http.StatusBadRequest, string(body)), nil
+	})}, Config{
+		Endpoint:         "https://emotion.invalid",
+		APIKey:           "key",
+		Model:            "model",
+		MaxResponseBytes: 4096,
+		LogResponse: func(_ context.Context, value ResponseLogEntry) {
+			entry = value
+		},
+	})
+	_, err := client.Annotate(context.Background(), "原文")
+	requireCategory(t, err, categoryProviderStatus)
+	if entry.ProviderStatus != http.StatusBadRequest || entry.ProviderError != providerMessage {
+		t.Fatalf("entry = %#v", entry)
+	}
+}
+
+func TestAnnotateTruncatesProviderError(t *testing.T) {
+	var entry ResponseLogEntry
+	client := New(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		body, _ := json.Marshal(map[string]any{
+			"error": map[string]string{"message": strings.Repeat("错", maxProviderErrorRunes+10)},
+		})
+		return statusResponse(http.StatusBadRequest, string(body)), nil
+	})}, Config{
+		Endpoint:         "https://emotion.invalid",
+		APIKey:           "key",
+		Model:            "model",
+		MaxResponseBytes: 4096,
+		LogResponse: func(_ context.Context, value ResponseLogEntry) {
+			entry = value
+		},
+	})
+	if _, err := client.Annotate(context.Background(), "原文"); err == nil {
+		t.Fatal("expected provider status error")
+	}
+	if got := len([]rune(entry.ProviderError)); got != maxProviderErrorRunes+1 || !strings.HasSuffix(entry.ProviderError, "…") {
+		t.Fatalf("provider error length = %d, value = %q", got, entry.ProviderError)
+	}
+}
+
+func TestAnnotateBoundsProviderErrorBody(t *testing.T) {
+	var entry ResponseLogEntry
+	client := New(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return statusResponse(http.StatusBadRequest, strings.Repeat("x", maxProviderErrorBytes+1)), nil
+	})}, Config{
+		Endpoint:         "https://emotion.invalid",
+		APIKey:           "key",
+		Model:            "model",
+		MaxResponseBytes: 1 << 20,
+		LogResponse: func(_ context.Context, value ResponseLogEntry) {
+			entry = value
+		},
+	})
+	_, err := client.Annotate(context.Background(), "原文")
+	requireCategory(t, err, categoryProviderStatus)
+	if entry.ProviderStatus != http.StatusBadRequest || entry.ProviderError != "" {
+		t.Fatalf("entry = %#v", entry)
+	}
+}
+
+func TestAnnotateDoesNotLogUnstructuredProviderBody(t *testing.T) {
+	var entry ResponseLogEntry
+	client := New(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return statusResponse(http.StatusBadRequest, "private raw error body"), nil
+	})}, Config{
+		Endpoint:         "https://emotion.invalid",
+		APIKey:           "key",
+		Model:            "model",
+		MaxResponseBytes: 4096,
+		LogResponse: func(_ context.Context, value ResponseLogEntry) {
+			entry = value
+		},
+	})
+	if _, err := client.Annotate(context.Background(), "原文"); err == nil {
+		t.Fatal("expected provider status error")
+	}
+	if entry.ProviderError != "" {
+		t.Fatalf("provider error = %q", entry.ProviderError)
+	}
+}
+
 func TestAnnotateLogsFailureCategories(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -16,10 +16,12 @@ import (
 )
 
 const (
-	maxStyles           = 64
-	maxStyleRunes       = 80
-	maxAnchorRunes      = 24
-	maxInstructionRunes = 4096
+	maxStyles             = 64
+	maxStyleRunes         = 80
+	maxAnchorRunes        = 24
+	maxInstructionRunes   = 4096
+	maxProviderErrorRunes = 256
+	maxProviderErrorBytes = 4096
 
 	categoryProviderStatus   = "provider_status"
 	categoryProviderJSON     = "provider_json"
@@ -34,8 +36,10 @@ const (
 )
 
 type Error struct {
-	Category string
-	Cause    error
+	Category       string
+	ProviderStatus int
+	ProviderError  string
+	Cause          error
 }
 
 func (e *Error) Error() string {
@@ -54,6 +58,8 @@ type ResponseLogEntry struct {
 	ErrorCategory    string    `json:"error_category,omitempty"`
 	Attempts         int       `json:"attempts"`
 	DurationMS       int64     `json:"duration_ms"`
+	ProviderStatus   int       `json:"provider_status,omitempty"`
+	ProviderError    string    `json:"provider_error,omitempty"`
 	Content          string    `json:"content,omitempty"`
 	StyleInstruction string    `json:"style_instruction,omitempty"`
 }
@@ -178,6 +184,11 @@ func (c *Client) Annotate(ctx context.Context, text string) (instruction string,
 			DurationMS:    time.Since(started).Milliseconds(),
 			Content:       content,
 		}
+		var emotionErr *Error
+		if errors.As(err, &emotionErr) {
+			entry.ProviderStatus = emotionErr.ProviderStatus
+			entry.ProviderError = emotionErr.ProviderError
+		}
 		if err == nil {
 			entry.StyleInstruction = instruction
 		}
@@ -272,18 +283,29 @@ func (c *Client) attempt(ctx context.Context, payload []byte, original string) (
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, c.config.MaxResponseBytes+1))
+	limit := c.config.MaxResponseBytes
+	if statusError := resp.StatusCode < 200 || resp.StatusCode >= 300; statusError {
+		limit = min(limit, int64(maxProviderErrorBytes))
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		if ctx.Err() != nil {
 			return attemptResult{}, false, ctx.Err()
 		}
 		return attemptResult{}, true, &Error{Category: categoryUnavailable, Cause: err}
 	}
-	if int64(len(body)) > c.config.MaxResponseBytes {
-		return attemptResult{}, false, &Error{Category: categoryResponseTooLarge}
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return attemptResult{}, retryableStatus(resp.StatusCode), &Error{Category: categoryProviderStatus}
+		statusErr := &Error{
+			Category:       categoryProviderStatus,
+			ProviderStatus: resp.StatusCode,
+		}
+		if int64(len(body)) <= limit {
+			statusErr.ProviderError = providerError(body)
+		}
+		return attemptResult{}, retryableStatus(resp.StatusCode), statusErr
+	}
+	if int64(len(body)) > limit {
+		return attemptResult{}, false, &Error{Category: categoryResponseTooLarge}
 	}
 
 	var decoded response
@@ -396,6 +418,26 @@ func decodeStrict(data []byte, target any) error {
 		return errors.New("trailing JSON data")
 	}
 	return nil
+}
+
+func providerError(body []byte) string {
+	var decoded struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &decoded) == nil && decoded.Error.Message != "" {
+		return truncate(decoded.Error.Message, maxProviderErrorRunes)
+	}
+	return ""
+}
+
+func truncate(value string, maxRunes int) string {
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) <= maxRunes {
+		return string(runes)
+	}
+	return string(runes[:maxRunes]) + "…"
 }
 
 func retryableStatus(status int) bool {

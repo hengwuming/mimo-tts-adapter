@@ -32,6 +32,9 @@ explicit contracts over frameworks or speculative abstractions.
   instruction limits locally.
 - Keep emotion calls single-flight. Queue waits use the request context and count
   toward the emotion timeout, independently of MiMo synthesis concurrency.
+- Default emotion structured output off for broad OpenAI-compatible provider
+  support. Enable strict `json_schema` only when the configured provider is known
+  to support it; local strict JSON and range validation apply in both modes.
 - Only unwrap a single `json` or unlabelled fence that encloses the entire trimmed
   emotion response; reject surrounding prose or nested fences.
 ## Testing Requirements

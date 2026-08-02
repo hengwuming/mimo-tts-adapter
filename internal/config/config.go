@@ -56,7 +56,7 @@ func Load() (Config, error) {
 		EmotionEndpoint:        os.Getenv("EMOTION_ENDPOINT"),
 		EmotionAPIKey:          os.Getenv("EMOTION_API_KEY"),
 		EmotionModel:           os.Getenv("EMOTION_MODEL"),
-		EmotionResponseFormat:  true,
+		EmotionResponseFormat:  false,
 		EmotionResponseLogFile: os.Getenv("EMOTION_RESPONSE_LOG_FILE"),
 	}
 
@@ -112,7 +112,7 @@ func Load() (Config, error) {
 	if cfg.EmotionMaxRetries, err = envInt("EMOTION_MAX_RETRIES", 0, 0, 5); err != nil {
 		return Config{}, err
 	}
-	if cfg.EmotionResponseFormat, err = envBool("EMOTION_RESPONSE_FORMAT", true); err != nil {
+	if cfg.EmotionResponseFormat, err = envBool("EMOTION_RESPONSE_FORMAT", false); err != nil {
 		return Config{}, err
 	}
 
